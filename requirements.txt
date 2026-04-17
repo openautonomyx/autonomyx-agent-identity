@@ -4,3 +4,4 @@ pydantic>=2.7.0
 uvicorn>=0.30.0
 litellm>=1.40.0
 PyJWT>=2.8.0
+testcontainers>=4.0.0

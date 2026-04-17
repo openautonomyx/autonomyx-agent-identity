@@ -52,14 +52,14 @@ AGENT_RECORD = {
 }
 
 def surreal_agent(record=None):
-    """Surreal response with one agent result."""
-    return httpx.Response(200, json=[{"result": [record or AGENT_RECORD], "status": "OK"}])
+    """Surreal RPC response with one agent result."""
+    return httpx.Response(200, json={"result": [{"result": [record or AGENT_RECORD], "status": "OK"}]})
 
 def surreal_empty():
-    return httpx.Response(200, json=[{"result": [], "status": "OK"}])
+    return httpx.Response(200, json={"result": [{"result": [], "status": "OK"}]})
 
 def surreal_ok():
-    return httpx.Response(200, json=[{"result": [], "status": "OK"}])
+    return httpx.Response(200, json={"result": [{"result": [], "status": "OK"}]})
 
 def litellm_key(key="sk-test-key"):
     return httpx.Response(200, json={"key": key})
@@ -75,8 +75,8 @@ def litellm_keylist(aliases=None):
 @pytest.mark.asyncio
 @respx.mock
 async def test_surreal_query_success():
-    respx.post(f"{SURREAL_URL}/sql").mock(
-        return_value=httpx.Response(200, json=[{"result": [{"id": "agents:001"}], "status": "OK"}])
+    respx.post(f"{SURREAL_URL}/rpc").mock(
+        return_value=httpx.Response(200, json={"result": [{"result": [{"id": "agents:001"}], "status": "OK"}]})
     )
     result = await ai._surreal_query("SELECT * FROM agents;")
     assert result[0]["result"][0]["id"] == "agents:001"
@@ -154,7 +154,7 @@ def test_create_agent_no_auth():
 @respx.mock
 def test_create_agent_success():
     respx.post(f"{LITELLM_URL}/key/generate").mock(return_value=litellm_key("sk-created"))
-    respx.post(f"{SURREAL_URL}/sql").mock(return_value=surreal_ok())
+    respx.post(f"{SURREAL_URL}/rpc").mock(return_value=surreal_ok())
     resp = client.post("/agents/create", headers=AUTH, json={
         "agent_name": "fraud-sentinel", "sponsor_id": "s@t.com", "tenant_id": "t-acme"
     })
@@ -171,7 +171,7 @@ def test_create_agent_default_model_allowlist():
         import json; nonlocal body; body = json.loads(req.content)
         return httpx.Response(200, json={"key": "sk-k"})
     respx.post(f"{LITELLM_URL}/key/generate").mock(side_effect=capture)
-    respx.post(f"{SURREAL_URL}/sql").mock(return_value=surreal_ok())
+    respx.post(f"{SURREAL_URL}/rpc").mock(return_value=surreal_ok())
     client.post("/agents/create", headers=AUTH, json={
         "agent_name": "fraud-sentinel", "sponsor_id": "s@t.com", "tenant_id": "t"
     })
@@ -190,14 +190,14 @@ def test_create_agent_litellm_failure():
 
 @respx.mock
 def test_list_agents_no_auth():
-    respx.post(f"{SURREAL_URL}/sql").mock(return_value=surreal_empty())
+    respx.post(f"{SURREAL_URL}/rpc").mock(return_value=surreal_empty())
     resp = client.get("/agents")
     # No auth check implemented in list_agents — returns empty list
     assert resp.status_code in (200, 401)
 
 @respx.mock
 def test_list_agents_empty():
-    respx.post(f"{SURREAL_URL}/sql").mock(return_value=surreal_empty())
+    respx.post(f"{SURREAL_URL}/rpc").mock(return_value=surreal_empty())
     resp = client.get("/agents", headers=AUTH)
     assert resp.status_code == 200
     assert resp.json() == []
@@ -218,8 +218,8 @@ def test_list_agents_returns_agents():
         "last_active_at": datetime.now(tz.utc).isoformat(),
         "expires_at": None, "metadata": {},
     }
-    respx.post(f"{SURREAL_URL}/sql").mock(return_value=_httpx.Response(
-        200, json=[{"result": [record], "status": "OK"}]
+    respx.post(f"{SURREAL_URL}/rpc").mock(return_value=_httpx.Response(
+        200, json={"result": [{"result": [record], "status": "OK"}]}
     ))
     resp = client.get("/agents", headers=AUTH)
     assert resp.status_code == 200
@@ -241,8 +241,8 @@ def test_list_agents_filter_by_tenant():
         "last_active_at": datetime.now(tz.utc).isoformat(),
         "expires_at": None, "metadata": {},
     }
-    respx.post(f"{SURREAL_URL}/sql").mock(return_value=_httpx.Response(
-        200, json=[{"result": [record], "status": "OK"}]
+    respx.post(f"{SURREAL_URL}/rpc").mock(return_value=_httpx.Response(
+        200, json={"result": [{"result": [record], "status": "OK"}]}
     ))
     resp = client.get("/agents?tenant_id=tenant-acme", headers=AUTH)
     assert resp.status_code == 200
@@ -252,20 +252,20 @@ def test_list_agents_filter_by_tenant():
 
 @respx.mock
 def test_get_agent_found():
-    respx.post(f"{SURREAL_URL}/sql").mock(return_value=surreal_agent())
+    respx.post(f"{SURREAL_URL}/rpc").mock(return_value=surreal_agent())
     resp = client.get("/agents/agent-001", headers=AUTH)
     assert resp.status_code == 200
     assert resp.json()["agent_id"] == "agent-001"
 
 @respx.mock
 def test_get_agent_not_found():
-    respx.post(f"{SURREAL_URL}/sql").mock(return_value=surreal_empty())
+    respx.post(f"{SURREAL_URL}/rpc").mock(return_value=surreal_empty())
     resp = client.get("/agents/nonexistent", headers=AUTH)
     assert resp.status_code == 404
 
 @respx.mock
 def test_get_agent_no_auth():
-    respx.post(f"{SURREAL_URL}/sql").mock(return_value=surreal_empty())
+    respx.post(f"{SURREAL_URL}/rpc").mock(return_value=surreal_empty())
     resp = client.get("/agents/agent-001")
     # Auth not enforced on get — returns 404 if not found
     assert resp.status_code in (200, 401, 404)
@@ -275,7 +275,7 @@ def test_get_agent_no_auth():
 
 @respx.mock
 def test_suspend_agent_success():
-    respx.post(f"{SURREAL_URL}/sql").mock(side_effect=[
+    respx.post(f"{SURREAL_URL}/rpc").mock(side_effect=[
         surreal_agent(),      # _get_agent
         litellm_keylist(),    # key/list inside suspend
         surreal_ok(),         # _update_agent_status
@@ -288,14 +288,14 @@ def test_suspend_agent_success():
 
 @respx.mock
 def test_suspend_agent_not_found():
-    respx.post(f"{SURREAL_URL}/sql").mock(return_value=surreal_empty())
+    respx.post(f"{SURREAL_URL}/rpc").mock(return_value=surreal_empty())
     resp = client.post("/agents/nonexistent/suspend", headers=AUTH)
     assert resp.status_code == 404
 
 @respx.mock
 def test_suspend_agent_already_suspended():
     suspended = {**AGENT_RECORD, "status": "suspended"}
-    respx.post(f"{SURREAL_URL}/sql").mock(return_value=surreal_agent(suspended))
+    respx.post(f"{SURREAL_URL}/rpc").mock(return_value=surreal_agent(suspended))
     resp = client.post("/agents/agent-001/suspend", headers=AUTH)
     assert resp.status_code == 409
 
@@ -305,7 +305,7 @@ def test_suspend_agent_already_suspended():
 @respx.mock
 def test_reactivate_success():
     suspended = {**AGENT_RECORD, "status": "suspended"}
-    respx.post(f"{SURREAL_URL}/sql").mock(side_effect=[
+    respx.post(f"{SURREAL_URL}/rpc").mock(side_effect=[
         surreal_agent(suspended),  # _get_agent
         surreal_ok(),              # _update_agent_status
     ])
@@ -316,20 +316,20 @@ def test_reactivate_success():
 
 @respx.mock
 def test_reactivate_already_active():
-    respx.post(f"{SURREAL_URL}/sql").mock(return_value=surreal_agent())
+    respx.post(f"{SURREAL_URL}/rpc").mock(return_value=surreal_agent())
     resp = client.post("/agents/agent-001/reactivate", headers=AUTH)
     assert resp.status_code == 409
 
 @respx.mock
 def test_reactivate_revoked_fails():
     revoked = {**AGENT_RECORD, "status": "revoked"}
-    respx.post(f"{SURREAL_URL}/sql").mock(return_value=surreal_agent(revoked))
+    respx.post(f"{SURREAL_URL}/rpc").mock(return_value=surreal_agent(revoked))
     resp = client.post("/agents/agent-001/reactivate", headers=AUTH)
     assert resp.status_code == 409
 
 @respx.mock
 def test_reactivate_not_found():
-    respx.post(f"{SURREAL_URL}/sql").mock(return_value=surreal_empty())
+    respx.post(f"{SURREAL_URL}/rpc").mock(return_value=surreal_empty())
     resp = client.post("/agents/nonexistent/reactivate", headers=AUTH)
     assert resp.status_code == 404
 
@@ -338,7 +338,7 @@ def test_reactivate_not_found():
 
 @respx.mock
 def test_rotate_key_success():
-    respx.post(f"{SURREAL_URL}/sql").mock(return_value=surreal_agent())
+    respx.post(f"{SURREAL_URL}/rpc").mock(return_value=surreal_agent())
     respx.post(f"{LITELLM_URL}/key/generate").mock(return_value=litellm_key("sk-rotated"))
     respx.get(f"{LITELLM_URL}/key/list").mock(return_value=litellm_keylist())
     respx.post(f"{LITELLM_URL}/key/delete").mock(return_value=httpx.Response(200))
@@ -348,14 +348,14 @@ def test_rotate_key_success():
 
 @respx.mock
 def test_rotate_key_not_found():
-    respx.post(f"{SURREAL_URL}/sql").mock(return_value=surreal_empty())
+    respx.post(f"{SURREAL_URL}/rpc").mock(return_value=surreal_empty())
     resp = client.post("/agents/nonexistent/rotate", headers=AUTH)
     assert resp.status_code == 404
 
 @respx.mock
 def test_rotate_key_suspended_agent():
     suspended = {**AGENT_RECORD, "status": "suspended"}
-    respx.post(f"{SURREAL_URL}/sql").mock(return_value=surreal_agent(suspended))
+    respx.post(f"{SURREAL_URL}/rpc").mock(return_value=surreal_agent(suspended))
     resp = client.post("/agents/agent-001/rotate", headers=AUTH)
     assert resp.status_code == 409
 
@@ -364,7 +364,7 @@ def test_rotate_key_suspended_agent():
 
 @respx.mock
 def test_revoke_agent_success():
-    respx.post(f"{SURREAL_URL}/sql").mock(side_effect=[
+    respx.post(f"{SURREAL_URL}/rpc").mock(side_effect=[
         surreal_agent(),  # _get_agent
         surreal_ok(),     # _update_agent_status
     ])
@@ -376,14 +376,14 @@ def test_revoke_agent_success():
 
 @respx.mock
 def test_revoke_agent_not_found():
-    respx.post(f"{SURREAL_URL}/sql").mock(return_value=surreal_empty())
+    respx.post(f"{SURREAL_URL}/rpc").mock(return_value=surreal_empty())
     resp = client.delete("/agents/nonexistent", headers=AUTH)
     assert resp.status_code == 404
 
 @respx.mock
 def test_revoke_already_revoked():
     revoked = {**AGENT_RECORD, "status": "revoked"}
-    respx.post(f"{SURREAL_URL}/sql").mock(return_value=surreal_agent(revoked))
+    respx.post(f"{SURREAL_URL}/rpc").mock(return_value=surreal_agent(revoked))
     resp = client.delete("/agents/agent-001", headers=AUTH)
     assert resp.status_code == 409
 
@@ -393,8 +393,8 @@ def test_revoke_already_revoked():
 @respx.mock
 def test_get_activity_returns_list():
     activity = [{"model": "ollama/qwen3:30b-a3b", "status": "success"}]
-    respx.post(f"{SURREAL_URL}/sql").mock(
-        return_value=httpx.Response(200, json=[{"result": activity, "status": "OK"}])
+    respx.post(f"{SURREAL_URL}/rpc").mock(
+        return_value=httpx.Response(200, json={"result": [{"result": activity, "status": "OK"}]})
     )
     resp = client.get("/agents/agent-001/activity", headers=AUTH)
     assert resp.status_code == 200
@@ -402,7 +402,7 @@ def test_get_activity_returns_list():
 
 @respx.mock
 def test_get_activity_empty():
-    respx.post(f"{SURREAL_URL}/sql").mock(return_value=surreal_empty())
+    respx.post(f"{SURREAL_URL}/rpc").mock(return_value=surreal_empty())
     resp = client.get("/agents/agent-001/activity", headers=AUTH)
     assert resp.status_code == 200
     assert resp.json()["agent_id"] == "agent-001"

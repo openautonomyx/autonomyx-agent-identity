@@ -111,26 +111,31 @@ def _auth_headers():
 
 def _surreal_headers():
     return {
-        "NS": SURREAL_NS,
-        "DB": SURREAL_DB,
+        "surreal-ns": SURREAL_NS,
+        "surreal-db": SURREAL_DB,
         "Accept": "application/json",
         "Content-Type": "application/json",
     }
 
 
 async def _surreal_query(query: str, vars: dict = None):
-    """Execute a SurrealDB query."""
+    """Execute a SurrealDB query via JSON-RPC (supports parameterized queries)."""
     if not SURREAL_URL:
         return None
     async with httpx.AsyncClient(timeout=10) as client:
         r = await client.post(
-            f"{SURREAL_URL}/sql",
+            f"{SURREAL_URL}/rpc",
             headers=_surreal_headers(),
             auth=(SURREAL_USER, SURREAL_PASS),
-            json={"query": query, "vars": vars or {}},
+            json={
+                "id": 1,
+                "method": "query",
+                "params": [query, vars or {}],
+            },
         )
         r.raise_for_status()
-        return r.json()
+        data = r.json()
+        return data.get("result", [])
 
 
 async def _create_litellm_key(
@@ -185,6 +190,19 @@ async def _delete_litellm_key(key: str):
         return r.status_code in (200, 204)
 
 
+async def _revoke_litellm_key_by_alias(alias: str):
+    """Find and delete a LiteLLM key by its alias."""
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.get(f"{LITELLM_URL}/key/list", headers=_auth_headers())
+        if r.status_code == 200:
+            keys = r.json().get("keys", [])
+            for k in keys:
+                if k.get("key_alias") == alias:
+                    await _delete_litellm_key(k["key"])
+                    return True
+    return False
+
+
 async def _store_agent(agent: dict):
     """Store agent record in SurrealDB."""
     query = """
@@ -193,6 +211,9 @@ async def _store_agent(agent: dict):
             agent_name:        $agent_name,
             agent_type:        $agent_type,
             sponsor_id:        $sponsor_id,
+            owner_ids:         $owner_ids,
+            manager_id:        $manager_id,
+            blueprint_id:      $blueprint_id,
             tenant_id:         $tenant_id,
             allowed_models:    $allowed_models,
             budget_limit:      $budget_limit,
@@ -383,15 +404,7 @@ async def suspend_agent(agent_id: str, authorization: Optional[str] = Header(Non
     if agent["status"] != "active":
         raise HTTPException(status_code=409, detail=f"Agent is {agent['status']}, not active")
 
-    # Revoke LiteLLM key by alias
-    async with httpx.AsyncClient(timeout=10) as client:
-        r = await client.get(f"{LITELLM_URL}/key/list", headers=_auth_headers())
-        if r.status_code == 200:
-            keys = r.json().get("keys", [])
-            for k in keys:
-                if k.get("key_alias") == agent["litellm_key_alias"]:
-                    await _delete_litellm_key(k["key"])
-                    break
+    await _revoke_litellm_key_by_alias(agent["litellm_key_alias"])
 
     await _update_agent_status(agent_id, "suspended")
     return {"agent_id": agent_id, "status": "suspended", "message": "Agent suspended. Use /reactivate to restore."}
@@ -456,15 +469,7 @@ async def rotate_agent_key(agent_id: str, authorization: Optional[str] = Header(
         agent_type=agent["agent_type"],
     )
 
-    # Then delete old key
-    async with httpx.AsyncClient(timeout=10) as client:
-        r = await client.get(f"{LITELLM_URL}/key/list", headers=_auth_headers())
-        if r.status_code == 200:
-            keys = r.json().get("keys", [])
-            for k in keys:
-                if k.get("key_alias") == agent["litellm_key_alias"] \
-                        and k["key"] != new_key_data["key"]:
-                    await _delete_litellm_key(k["key"])
+    await _revoke_litellm_key_by_alias(agent["litellm_key_alias"])
 
     return AgentCreateResponse(
         **{k: agent.get(k) for k in AgentResponse.model_fields},
@@ -485,15 +490,7 @@ async def revoke_agent(agent_id: str, authorization: Optional[str] = Header(None
     if agent["status"] == "revoked":
         raise HTTPException(status_code=409, detail="Agent already revoked")
 
-    # Delete LiteLLM key
-    async with httpx.AsyncClient(timeout=10) as client:
-        r = await client.get(f"{LITELLM_URL}/key/list", headers=_auth_headers())
-        if r.status_code == 200:
-            keys = r.json().get("keys", [])
-            for k in keys:
-                if k.get("key_alias") == agent["litellm_key_alias"]:
-                    await _delete_litellm_key(k["key"])
-                    break
+    await _revoke_litellm_key_by_alias(agent["litellm_key_alias"])
 
     # Mark as revoked — record retained for audit
     await _update_agent_status(agent_id, "revoked")
