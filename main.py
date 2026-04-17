@@ -26,6 +26,7 @@ from audit import router as audit_router
 from blueprints import router as blueprints_router
 from bulk_ops import router as bulk_router
 from webhooks import router as webhooks_router
+from scim import router as scim_router
 from expiry_worker import check_and_expire
 import asyncio
 
@@ -61,6 +62,7 @@ app.include_router(audit_router)
 app.include_router(blueprints_router)
 app.include_router(bulk_router)
 app.include_router(webhooks_router)
+app.include_router(scim_router)
 
 
 @app.get("/health")
