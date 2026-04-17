@@ -1,0 +1,83 @@
+model
+  schema 1.1
+
+# ── Types ─────────────────────────────────────────────────────────────────────
+
+# Human users — platform admins, tenant users, sponsors, owners
+type user
+
+# AI agents — first-class principals per OpenFGA agent modeling guide
+type agent
+
+# Blueprints — templates from which agent identities are created
+# Disabling a blueprint suspends all agents created from it
+type blueprint
+  relations
+    define owner:   [user]
+    define sponsor: [user]
+    define active:  [user] # system-managed — set to indicate blueprint is enabled
+
+# Tenants (Keycloak groups / organisations)
+type tenant
+  relations
+    define admin:   [user]
+    define member:  [user, agent]
+    # Computed: admins can do everything members can
+    define can_manage: admin
+    define can_use:    member or admin
+
+# AI models available in the gateway
+type model
+  relations
+    define provider: [user]           # who registered this model
+    define can_use:  [user, agent]    # who is allowed to call this model
+
+# LLM API endpoints (e.g. /v1/chat/completions, /recommend, /feedback)
+type endpoint
+  relations
+    define can_call: [user, agent]
+
+# Langflow workflows (each flow is a resource)
+type workflow
+  relations
+    define owner:    [user, agent]
+    define can_run:  [user, agent]
+    define can_edit: [user]
+
+# MCP tools exposed by the gateway
+type mcp_tool
+  relations
+    define can_invoke: [user, agent]
+
+# ── Agent-specific relations ───────────────────────────────────────────────────
+
+# Re-define agent with full administrative relations
+# (extends the base agent type with governance)
+type agent_identity
+  relations
+    # Governance roles (per Microsoft Entra Agent ID model)
+    define sponsor:         [user]           # REQUIRED — business owner, lifecycle decisions
+    define owner:           [user]           # technical admin — config + credentials
+    define manager:         [user]           # org hierarchy — request access packages
+    define created_from:    [blueprint]      # which blueprint this agent came from
+
+    # Tenant membership
+    define belongs_to:      [tenant]
+
+    # What this agent is allowed to do
+    define can_call_model:  [model]          # explicit model access grants
+    define can_run_workflow:[workflow]        # explicit workflow access grants
+    define can_invoke_tool: [mcp_tool]       # explicit MCP tool access grants
+
+    # Computed permissions
+    # Agent can use a model if explicitly granted OR if tenant admin granted it
+    define can_use_model:   can_call_model
+
+    # Suspension — owner or sponsor can suspend
+    define can_suspend:     owner or sponsor
+
+    # Revocation — owner only (permanent)
+    define can_revoke:      owner
+
+    # Activation — owner only (re-enable after suspension)
+    define can_activate:    owner

@@ -1,0 +1,230 @@
+{
+  "tuples": [
+    // ── Blueprints ──────────────────────────────────────────────────────────
+    {
+      "user": "user:admin@openautonomyx.com",
+      "relation": "owner",
+      "object": "blueprint:workflow"
+    },
+    {
+      "user": "user:admin@openautonomyx.com",
+      "relation": "sponsor",
+      "object": "blueprint:workflow"
+    },
+    {
+      "user": "user:admin@openautonomyx.com",
+      "relation": "owner",
+      "object": "blueprint:skill"
+    },
+    {
+      "user": "user:admin@openautonomyx.com",
+      "relation": "sponsor",
+      "object": "blueprint:skill"
+    },
+    {
+      "user": "user:admin@openautonomyx.com",
+      "relation": "owner",
+      "object": "blueprint:ephemeral"
+    },
+    {
+      "user": "user:admin@openautonomyx.com",
+      "relation": "sponsor",
+      "object": "blueprint:ephemeral"
+    },
+
+    // ── Internal tenant ─────────────────────────────────────────────────────
+    {
+      "user": "user:admin@openautonomyx.com",
+      "relation": "admin",
+      "object": "tenant:autonomyx-internal"
+    },
+
+    // ── Models ──────────────────────────────────────────────────────────────
+    // Local models — all agents can use by default
+    {
+      "user": "user:admin@openautonomyx.com",
+      "relation": "provider",
+      "object": "model:qwen3-30b-a3b"
+    },
+    {
+      "user": "user:admin@openautonomyx.com",
+      "relation": "provider",
+      "object": "model:qwen2.5-coder-32b"
+    },
+    {
+      "user": "user:admin@openautonomyx.com",
+      "relation": "provider",
+      "object": "model:qwen2.5-14b"
+    },
+    {
+      "user": "user:admin@openautonomyx.com",
+      "relation": "provider",
+      "object": "model:nomic-embed-text"
+    },
+    // Cloud fallback models
+    {
+      "user": "user:admin@openautonomyx.com",
+      "relation": "provider",
+      "object": "model:groq-llama3-70b"
+    },
+    {
+      "user": "user:admin@openautonomyx.com",
+      "relation": "provider",
+      "object": "model:vertex-gemini-2.5-pro"
+    },
+
+    // ── Agent identity grants ────────────────────────────────────────────────
+
+    // fraud-sentinel
+    {
+      "user": "user:admin@openautonomyx.com",
+      "relation": "sponsor",
+      "object": "agent_identity:fraud-sentinel"
+    },
+    {
+      "user": "user:admin@openautonomyx.com",
+      "relation": "owner",
+      "object": "agent_identity:fraud-sentinel"
+    },
+    {
+      "user": "tenant:autonomyx-internal",
+      "relation": "belongs_to",
+      "object": "agent_identity:fraud-sentinel"
+    },
+    {
+      "user": "model:qwen3-30b-a3b",
+      "relation": "can_call_model",
+      "object": "agent_identity:fraud-sentinel"
+    },
+    {
+      "user": "model:groq-llama3-70b",
+      "relation": "can_call_model",
+      "object": "agent_identity:fraud-sentinel"
+    },
+
+    // policy-creator
+    {
+      "user": "user:admin@openautonomyx.com",
+      "relation": "sponsor",
+      "object": "agent_identity:policy-creator"
+    },
+    {
+      "user": "user:admin@openautonomyx.com",
+      "relation": "owner",
+      "object": "agent_identity:policy-creator"
+    },
+    {
+      "user": "tenant:autonomyx-internal",
+      "relation": "belongs_to",
+      "object": "agent_identity:policy-creator"
+    },
+    {
+      "user": "model:qwen3-30b-a3b",
+      "relation": "can_call_model",
+      "object": "agent_identity:policy-creator"
+    },
+    {
+      "user": "model:vertex-gemini-2.5-pro",
+      "relation": "can_call_model",
+      "object": "agent_identity:policy-creator"
+    },
+
+    // code-reviewer
+    {
+      "user": "user:admin@openautonomyx.com",
+      "relation": "sponsor",
+      "object": "agent_identity:code-reviewer"
+    },
+    {
+      "user": "user:admin@openautonomyx.com",
+      "relation": "owner",
+      "object": "agent_identity:code-reviewer"
+    },
+    {
+      "user": "tenant:autonomyx-internal",
+      "relation": "belongs_to",
+      "object": "agent_identity:code-reviewer"
+    },
+    {
+      "user": "model:qwen2.5-coder-32b",
+      "relation": "can_call_model",
+      "object": "agent_identity:code-reviewer"
+    },
+    {
+      "user": "model:groq-llama3-70b",
+      "relation": "can_call_model",
+      "object": "agent_identity:code-reviewer"
+    },
+
+    // web-scraper
+    {
+      "user": "user:admin@openautonomyx.com",
+      "relation": "sponsor",
+      "object": "agent_identity:web-scraper"
+    },
+    {
+      "user": "user:admin@openautonomyx.com",
+      "relation": "owner",
+      "object": "agent_identity:web-scraper"
+    },
+    {
+      "user": "tenant:autonomyx-internal",
+      "relation": "belongs_to",
+      "object": "agent_identity:web-scraper"
+    },
+    {
+      "user": "model:qwen2.5-14b",
+      "relation": "can_call_model",
+      "object": "agent_identity:web-scraper"
+    },
+    {
+      "user": "model:nomic-embed-text",
+      "relation": "can_call_model",
+      "object": "agent_identity:web-scraper"
+    },
+
+    // structured-data-parser
+    {
+      "user": "user:admin@openautonomyx.com",
+      "relation": "sponsor",
+      "object": "agent_identity:structured-data-parser"
+    },
+    {
+      "user": "user:admin@openautonomyx.com",
+      "relation": "owner",
+      "object": "agent_identity:structured-data-parser"
+    },
+    {
+      "user": "tenant:autonomyx-internal",
+      "relation": "belongs_to",
+      "object": "agent_identity:structured-data-parser"
+    },
+    {
+      "user": "model:qwen2.5-14b",
+      "relation": "can_call_model",
+      "object": "agent_identity:structured-data-parser"
+    },
+
+    // gateway-agent (most permissive — only for internal orchestration)
+    {
+      "user": "user:admin@openautonomyx.com",
+      "relation": "sponsor",
+      "object": "agent_identity:gateway-agent"
+    },
+    {
+      "user": "user:admin@openautonomyx.com",
+      "relation": "owner",
+      "object": "agent_identity:gateway-agent"
+    },
+    {
+      "user": "tenant:autonomyx-internal",
+      "relation": "belongs_to",
+      "object": "agent_identity:gateway-agent"
+    },
+    {
+      "user": "model:qwen3-30b-a3b",
+      "relation": "can_call_model",
+      "object": "agent_identity:gateway-agent"
+    }
+  ]
+}
