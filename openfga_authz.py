@@ -271,6 +271,111 @@ async def list_agent_models(
 
 # ── Convenience: grant/revoke model access for an agent ──────────────────────
 
+# ── APISIX forward-auth endpoint ───────────────────────────────────────────────
+
+@router.get("/check-request")
+async def check_request(
+    authorization: Optional[str] = Header(None),
+    x_forwarded_uri: Optional[str] = Header(None),
+    x_forwarded_method: Optional[str] = Header(None),
+):
+    """
+    Called by APISIX forward-auth on every API request.
+    Validates the bearer token, checks OpenFGA for service access.
+    Returns 200 with identity headers if allowed, 401/403 if denied.
+
+    APISIX passes:
+      - Authorization header (the client's API key)
+      - X-Forwarded-Uri (the original request path)
+      - X-Forwarded-Method (GET/POST/etc)
+
+    On success, returns headers that APISIX forwards to upstream:
+      - X-Agent-Id, X-Tenant-Id, X-Agent-Name
+    """
+    if not authorization:
+        raise HTTPException(status_code=401, detail="No authorization header")
+
+    token = authorization.replace("Bearer ", "").strip()
+
+    if token == LITELLM_MASTER:
+        from starlette.responses import Response
+        resp = Response(status_code=200)
+        resp.headers["X-Agent-Id"] = "admin"
+        resp.headers["X-Tenant-Id"] = "system"
+        resp.headers["X-Agent-Name"] = "admin"
+        return resp
+
+    path = (x_forwarded_uri or "").split("/")[1] if x_forwarded_uri else ""
+    service_map = {
+        "identity": "service:agent-identity",
+        "auth": "service:keycloak",
+        "secrets": "service:infisical",
+        "fga": "service:openfga",
+        "opa": "service:opa",
+        "temporal": "service:temporal",
+        "grafana": "service:grafana",
+        "bpmn": "service:camunda",
+        "content": "service:content-api",
+        "billing": "service:billing-api",
+        "memory": "service:cognitive-memory",
+        "crawl": "service:crawl4ai",
+        "studio": "service:agentstudio",
+        "crew": "service:agentcrew",
+        "chat": "service:librechat",
+        "skyvern": "service:skyvern",
+        "n8n": "service:n8n",
+    }
+    service_obj = service_map.get(path, f"service:{path}")
+
+    try:
+        from agent_identity import _surreal_query
+        result = await _surreal_query(
+            "SELECT * FROM agents WHERE litellm_key_alias = $alias LIMIT 1;",
+            {"alias": token}
+        )
+        agent = None
+        if result and result[0].get("result"):
+            agent = result[0]["result"][0]
+
+        if not agent:
+            result = await _surreal_query(
+                "SELECT * FROM agents WHERE agent_id = $aid LIMIT 1;",
+                {"aid": token}
+            )
+            if result and result[0].get("result"):
+                agent = result[0]["result"][0]
+
+        if not agent:
+            raise HTTPException(status_code=401, detail="Invalid API key")
+
+        if agent.get("status") != "active":
+            raise HTTPException(status_code=403, detail=f"Agent is {agent.get('status')}")
+
+        agent_obj = f"agent_identity:{agent['agent_name']}"
+        allowed = await fga_check(
+            user=agent_obj,
+            relation="can_access",
+            object_=service_obj,
+        )
+
+        if not allowed and OPENFGA_STORE_ID:
+            log.warning(f"DENY: {agent['agent_name']} → {service_obj}")
+            raise HTTPException(status_code=403, detail=f"Access denied to {path}")
+
+        from starlette.responses import Response
+        resp = Response(status_code=200)
+        resp.headers["X-Agent-Id"] = agent.get("agent_id", "")
+        resp.headers["X-Tenant-Id"] = agent.get("tenant_id", "")
+        resp.headers["X-Agent-Name"] = agent.get("agent_name", "")
+        return resp
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"check-request error: {e}")
+        raise HTTPException(status_code=403, detail="Auth check failed")
+
+
 @router.post("/agent/{agent_name}/grant-model/{model_name}")
 async def grant_model_to_agent(
     agent_name: str,
