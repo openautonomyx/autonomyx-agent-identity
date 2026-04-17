@@ -368,3 +368,175 @@ This specification is published under Creative Commons Attribution 4.0 (CC BY 4.
 **OPENAUTONOMYX (OPC) PRIVATE LIMITED**
 No. 78/9, Outer Ring Road, Varthur Hobli, Bellandur, Bangalore South, Bangalore – 560103, Karnataka, India
 CIN: U62010KA2026OPC215666
+
+---
+
+## 10. Adoption Guide
+
+### For Any Company Deploying AI Agents
+
+This specification is technology-agnostic. The model (11 attributes, 3 principal types, 2-layer auth) is independent of any specific database, identity provider, or policy engine.
+
+### 10.1 Choose Your Stack
+
+Each component is swappable. Pick what fits your existing infrastructure:
+
+| Layer | Options | Our reference |
+|---|---|---|
+| Human identity | Keycloak, Auth0, Okta, Entra ID, Logto, Authelia | Keycloak 25.0 |
+| Agent registry | SurrealDB, PostgreSQL+JSONB, MongoDB, DynamoDB, CockroachDB | SurrealDB v2.3.6 |
+| Relationship auth | OpenFGA, SpiceDB, Ory Keto, Authzed, Zanzibar-compatible | OpenFGA v1.8.0 |
+| Policy engine | OPA, Cedar (AWS), Cerbos, Casbin, custom | OPA 0.70.0 |
+| API gateway | LiteLLM, Kong, Envoy, Traefik, custom | LiteLLM (main-stable) |
+| Orchestration | Temporal, n8n, Prefect, Airflow, custom | Temporal (planned) |
+| Billing | Lago, OpenMeter, Stripe Billing, custom | Lago (self-hosted) |
+
+**The only hard requirement:** your agent registry must support the 11 attributes defined in Section 2.3. Everything else is implementation choice.
+
+### 10.2 Implement the Core APIs
+
+Five endpoints define the minimum viable agent identity system:
+
+```
+POST   /agents/create
+  Input:  agent_name, agent_type, sponsor_id, tenant_id, allowed_models
+  Output: agent_id, api_key (shown once)
+  Side effects: registry record + auth token + relationship tuples
+
+GET    /agents
+  Input:  sponsor_id (optional), tenant_id (optional)
+  Output: list of agent records (without keys)
+
+POST   /agents/{id}/suspend
+  Side effects: revoke auth token, set status=suspended
+  Reversible: yes (reactivate issues new token)
+
+POST   /agents/{id}/rotate
+  Side effects: revoke old token, issue new token, same agent_id
+  Use case: key compromise, scheduled rotation
+
+DELETE /agents/{id}
+  Side effects: revoke token, set status=revoked, remove relationships
+  Reversible: no (record preserved for audit, never deleted)
+```
+
+**Optional endpoints** for full lifecycle:
+
+```
+GET    /agents/{id}           → single agent detail
+POST   /agents/{id}/reactivate → restore suspended agent
+GET    /agents/{id}/activity  → audit trail from observability
+GET    /.well-known/agent-configuration → discovery document
+```
+
+### 10.3 Wire the Authorization Flow
+
+Every agent API call follows this path:
+
+```
+1. Agent sends request with auth token
+   Authorization: Bearer <agent-api-key>
+
+2. Gateway validates token
+   → Resolves: agent_id, tenant_id, allowed_models
+
+3. Relationship check (OpenFGA or equivalent)
+   → "Does agent:X have can_use relation to model:Y?"
+   → "Is agent:X a member of tenant:Z?"
+   → DENY if any relationship missing
+
+4. Policy check (OPA or equivalent)
+   → "Is agent:X status == active?"
+   → "Is agent:X not expired?"
+   → "Is agent:X budget < limit?"
+   → "Is this request DPDP/GDPR compliant?"
+   → DENY if any condition fails (with reason)
+
+5. Route request to model
+   → Track: agent_id in trace metadata
+   → Bill: agent_id in billing event
+```
+
+### 10.4 Integration Patterns
+
+**Pattern A: Greenfield (new platform)**
+Start with our reference implementation. Deploy SurrealDB + OpenFGA + OPA + API. Connect to your LLM gateway. Customize as needed.
+
+```bash
+git clone https://github.com/openautonomyx/autonomyx-agent-identity
+cp .env.example .env
+# Configure service URLs
+docker compose up -d
+# Create your first agent
+curl -X POST https://your-api/agents/create -d '{...}'
+```
+
+**Pattern B: Brownfield (existing platform with users)**
+Keep your existing identity provider for humans. Add agent registry alongside it. Wire authorization to check both human AND agent identities.
+
+```
+Existing system:
+  Users → Auth0 (keep as-is)
+  
+Add:
+  Agents → PostgreSQL table with 11 columns
+  Auth check → OPA policy that checks agent attributes
+  Token → your gateway's API key system
+```
+
+**Pattern C: Enterprise (compliance requirements)**
+Full implementation with audit trail, DPDP/GDPR compliance, and enterprise SSO.
+
+```
+  Humans → Keycloak (SAML federation with corporate IdP)
+  Agents → SurrealDB (isolated per tenant, encrypted at rest)
+  Auth → OpenFGA (full Zanzibar model) + OPA (DPDP policy rules)
+  Billing → Lago (per-agent, per-tenant invoicing)
+  Traces → Langfuse (per-tenant isolation, 90-day retention)
+  Audit → every agent action logged with sponsor_id
+```
+
+### 10.5 Migration from Service Accounts
+
+If you currently model agents as OAuth client credentials or Keycloak service accounts:
+
+**Step 1:** Create agent registry table/collection with the 11 attributes.
+
+**Step 2:** For each existing service account used as an agent:
+- Create a corresponding agent record
+- Set `sponsor_id` to the human who manages it
+- Set `allowed_models` to the models it actually uses
+- Set `budget_limit` based on historical spend
+
+**Step 3:** Redirect authentication from client credentials to agent API keys.
+
+**Step 4:** Add relationship tuples in your authorization system.
+
+**Step 5:** Enable policy checks. Start in audit-only mode (log denials but allow), then switch to enforce.
+
+**Timeline:** 2-4 weeks for a typical platform with 10-50 agents.
+
+### 10.6 Compliance Mapping
+
+| Requirement | How this spec addresses it |
+|---|---|
+| GDPR Article 30 (Records of Processing) | Every agent has `sponsor_id` — human accountability documented |
+| DPDP Act 2023 (India) | OPA policy blocks PII routing to non-Indian cloud providers |
+| SOC 2 (Access Control) | OpenFGA enforces least-privilege model access per agent |
+| ISO 27001 (Asset Management) | Agent registry = inventory of AI assets with owners |
+| NIST AI RMF (Governance) | Blueprint pattern ensures agents are created from approved templates |
+| EU AI Act (Transparency) | `/.well-known/agent-configuration` publicly documents agent capabilities |
+
+### 10.7 When NOT to Use This Spec
+
+- **Simple chatbots** with one model and no multi-tenancy → use a master API key
+- **Internal tools** with trusted users only → OAuth client credentials is sufficient
+- **Prototype/hackathon** → skip identity, iterate on product first
+- **< 5 agents** → manual key management is fine
+
+This spec adds value when you have:
+- Multiple agents with different access levels
+- Multi-tenant deployments
+- Compliance requirements (GDPR, DPDP, SOC 2)
+- Per-agent billing needs
+- Agents created dynamically by end users
