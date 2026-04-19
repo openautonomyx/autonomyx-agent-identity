@@ -1,0 +1,52 @@
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: base
+    env_file:
+      - ../.env
+    environment:
+      APP_ENV: prod
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+      openfga:
+        condition: service_started
+      opa:
+        condition: service_started
+    ports:
+      - "8500:8500"
+    restart: unless-stopped
+
+  surrealdb:
+    image: surrealdb/surrealdb:v2.3.6
+    command: ["start", "--log=warn", "--user=${SURREAL_USER}", "--pass=${SURREAL_PASS}", "rocksdb:/data/agents.db"]
+    volumes:
+      - surrealdb-data:/data
+    healthcheck:
+      test: ["CMD", "/surreal", "is-ready", "--conn", "http://localhost:8000"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  openfga:
+    image: openfga/openfga:v1.8.0
+    command: run
+    environment:
+      OPENFGA_DATASTORE_ENGINE: postgres
+      OPENFGA_DATASTORE_URI: ${OPENFGA_DATASTORE_URI}
+      OPENFGA_AUTHN_METHOD: preshared
+      OPENFGA_AUTHN_PRESHARED_KEYS: ${OPENFGA_PRESHARED_KEY}
+    restart: unless-stopped
+
+  opa:
+    image: openpolicyagent/opa:0.70.0-static
+    command: ["run", "--server", "--addr=0.0.0.0:8181", "--log-format=json", "--log-level=info", "/policies"]
+    volumes:
+      - ../opa:/policies:ro
+    restart: unless-stopped
+
+volumes:
+  surrealdb-data:

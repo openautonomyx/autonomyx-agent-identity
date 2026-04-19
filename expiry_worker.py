@@ -1,58 +1,85 @@
-"""
-expiry_worker.py — Background worker that auto-revokes expired ephemeral agents.
-Run as: python expiry_worker.py (loops every 60s)
-"""
-import os, asyncio, httpx
+"""Background worker that auto-expires active agents past TTL."""
+import os
+import asyncio
+import logging
 from datetime import datetime, timezone
+
+import httpx
+
 from audit import log_event
 
-SURREAL_URL  = os.environ.get("SURREAL_URL", "")
-SURREAL_NS   = os.environ.get("SURREAL_NS", "autonomyx")
-SURREAL_DB   = os.environ.get("SURREAL_DB", "agents")
+SURREAL_URL = os.environ.get("SURREAL_URL", "")
+SURREAL_NS = os.environ.get("SURREAL_NS", "autonomyx")
+SURREAL_DB = os.environ.get("SURREAL_DB", "agents")
 SURREAL_USER = os.environ.get("SURREAL_USER", "")
 SURREAL_PASS = os.environ.get("SURREAL_PASS", "")
-LITELLM_URL  = os.environ.get("LITELLM_URL", "http://localhost:4000")
-LITELLM_MASTER = os.environ.get("LITELLM_MASTER_KEY", "")
 CHECK_INTERVAL = int(os.environ.get("EXPIRY_CHECK_INTERVAL", "60"))
 
-def _headers():
-    return {"surreal-ns": SURREAL_NS, "surreal-db": SURREAL_DB, "Accept": "application/json", "Content-Type": "application/json"}
+log = logging.getLogger("expiry_worker")
 
-async def check_and_expire():
+
+def _headers():
+    return {
+        "surreal-ns": SURREAL_NS,
+        "surreal-db": SURREAL_DB,
+        "Accept": "application/json",
+        "Content-Type": "text/plain",
+    }
+
+
+async def check_and_expire() -> int:
+    if not SURREAL_URL:
+        log.warning("SURREAL_URL not configured; skipping expiry check")
+        return 0
+
     now = datetime.now(timezone.utc).isoformat()
-    query = f"SELECT * FROM agent WHERE status = 'active' AND expires_at != NONE AND expires_at < '{now}';"
+    query = (
+        "SELECT * FROM agents "
+        "WHERE status = 'active' AND expires_at != NONE AND expires_at < $now;"
+    )
     async with httpx.AsyncClient(timeout=10) as client:
-        r = await client.post(f"{SURREAL_URL}/sql", headers=_headers(), auth=(SURREAL_USER, SURREAL_PASS), content=query)
-        result = r.json()
-    
+        r = await client.post(
+            f"{SURREAL_URL}/rpc",
+            headers={**_headers(), "Content-Type": "application/json"},
+            auth=(SURREAL_USER, SURREAL_PASS),
+            json={"id": 1, "method": "query", "params": [query, {"now": now}]},
+        )
+        r.raise_for_status()
+        result = r.json().get("result", [])
+
     expired = []
     for res in result:
-        for agent in res.get("result", []):
-            expired.append(agent)
-    
+        expired.extend(res.get("result", []))
+
     for agent in expired:
         aid = agent.get("agent_id", "")
         name = agent.get("agent_name", "")
-        # Update status
-        update = f"UPDATE agent SET status = 'expired' WHERE agent_id = '{aid}';"
+        update = "UPDATE type::thing('agents', $agent_id) SET status = 'expired';"
         async with httpx.AsyncClient(timeout=10) as client:
-            await client.post(f"{SURREAL_URL}/sql", headers=_headers(), auth=(SURREAL_USER, SURREAL_PASS), content=update)
-        
+            await client.post(
+                f"{SURREAL_URL}/rpc",
+                headers={**_headers(), "Content-Type": "application/json"},
+                auth=(SURREAL_USER, SURREAL_PASS),
+                json={"id": 1, "method": "query", "params": [update, {"agent_id": aid}]},
+            )
+
         await log_event("agent.expired", aid, name, "system", "system", agent.get("tenant_id", ""))
-        print(f"EXPIRED: {name} ({aid})")
-    
+        log.info("EXPIRED: %s (%s)", name, aid)
+
     return len(expired)
 
+
 async def run():
-    print(f"Expiry worker started (checking every {CHECK_INTERVAL}s)")
+    log.info("Expiry worker started (interval=%ss)", CHECK_INTERVAL)
     while True:
         try:
             count = await check_and_expire()
             if count > 0:
-                print(f"Expired {count} agents")
+                log.info("Expired %s agents", count)
         except Exception as e:
-            print(f"Expiry check error: {e}")
+            log.exception("Expiry check error: %s", e)
         await asyncio.sleep(CHECK_INTERVAL)
+
 
 if __name__ == "__main__":
     asyncio.run(run())

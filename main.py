@@ -1,20 +1,17 @@
-"""
-Autonomyx Agent Identity System
-Entra Agent ID spec — open-source implementation
-
-Principals:
-  - Humans: Keycloak OIDC (browser login)
-  - Agents: SurrealDB (first-class entity, own lifecycle)
-  - Services: Keycloak service accounts (M2M)
-
-Auth flow:
-  Human → Keycloak JWT → /agents API → creates agent in SurrealDB + LiteLLM key + OpenFGA tuples
-  Agent → LiteLLM Virtual Key → Gateway → OpenFGA check (WHO) → OPA check (CONDITIONS) → Model
-"""
+"""Autonomyx Agent Identity Plane API."""
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+import asyncio
+import logging
+
+import httpx
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
 from infisical_secrets import load_secrets
+from settings import get_settings
+from observability import RequestContextMiddleware, configure_logging
 
 load_secrets()
 
@@ -28,31 +25,59 @@ from bulk_ops import router as bulk_router
 from webhooks import router as webhooks_router
 from scim import router as scim_router
 from expiry_worker import check_and_expire
-import asyncio
+
+settings = get_settings()
+configure_logging(settings.log_level)
+log = logging.getLogger("main")
 
 
 async def _expiry_loop():
     while True:
         try:
             await check_and_expire()
-        except Exception:
-            pass
+        except Exception as exc:
+            log.exception("expiry loop failed: %s", exc)
         await asyncio.sleep(60)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     task = asyncio.create_task(_expiry_loop())
-    yield
-    task.cancel()
+    try:
+        yield
+    finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
 
+import contextlib
 app = FastAPI(
-    title="Autonomyx Agent Identity",
+    title=settings.app_name,
     description="Entra Agent ID spec — Keycloak + SurrealDB + OpenFGA + OPA",
-    version="1.0.0",
+    version=settings.app_version,
     lifespan=lifespan,
 )
+app.add_middleware(RequestContextMiddleware)
+
+if settings.cors_allow_origins_list:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_allow_origins_list,
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+        allow_headers=["Authorization", "Content-Type", "X-Request-Id", "Idempotency-Key"],
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    log.exception("Unhandled exception at %s", request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={"error": {"code": "internal_error", "message": "Unexpected server error"}},
+    )
+
 
 app.include_router(identity_router)
 app.include_router(discovery_router)
@@ -65,6 +90,39 @@ app.include_router(webhooks_router)
 app.include_router(scim_router)
 
 
+@app.get("/health/live")
+async def health_live():
+    return {"status": "ok", "service": "agent-identity"}
+
+
+@app.get("/health/ready")
+async def health_ready():
+    checks = {"surreal": "unknown", "opa": "unknown", "openfga": "unknown"}
+
+    async with httpx.AsyncClient(timeout=2.0) as client:
+        try:
+            if settings.surreal_url:
+                r = await client.get(f"{settings.surreal_url}/health")
+                checks["surreal"] = "ok" if r.status_code < 500 else "error"
+        except Exception:
+            checks["surreal"] = "error"
+
+        try:
+            r = await client.get(f"{settings.opa_url}/health")
+            checks["opa"] = "ok" if r.status_code == 200 else "error"
+        except Exception:
+            checks["opa"] = "error"
+
+        try:
+            r = await client.get(f"{settings.openfga_url}/healthz")
+            checks["openfga"] = "ok" if r.status_code < 500 else "error"
+        except Exception:
+            checks["openfga"] = "error"
+
+    ready = all(v in {"ok", "unknown"} for v in checks.values())
+    return JSONResponse(status_code=200 if ready else 503, content={"status": "ok" if ready else "degraded", "checks": checks})
+
+
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "agent-identity"}
+    return await health_live()
