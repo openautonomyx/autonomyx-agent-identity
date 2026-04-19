@@ -1,69 +1,128 @@
-# Autonomyx Agent Identity System
+# AutonomyX Agent Identity Plane
 
-**Entra Agent ID spec — open-source implementation**
+AutonomyX Agent Identity Plane is an open-source platform for managing non-human identities (AI agents) across registration, trust, authorization, policy enforcement, and lifecycle controls.
 
-Three principal types, one platform:
-- **Humans** → Keycloak (OIDC browser login)
-- **Agents** → SurrealDB (first-class entity, own lifecycle)
-- **Services** → Keycloak service accounts (M2M)
+This repository now includes:
+- a FastAPI backend for identity, authz, policy, audit, webhooks, and SCIM-style modules,
+- a production-oriented operations baseline,
+- and a new Next.js product website + admin console experience.
 
-## Architecture
+## Product surfaces
 
-```
-Human creates agent:
-  POST /agents/create → SurrealDB + LiteLLM key + OpenFGA tuples
+### 1) Public website (`frontend/app`)
+Pages implemented:
+- Home
+- Product
+- Architecture
+- Security
+- Developers
+- Integrations
+- Pricing placeholder
+- Open Source / Community
+- Contact / Demo placeholder
 
-Agent authenticates:
-  Authorization: Bearer sk-agent:name:tenant
-  → LiteLLM validates → OpenFGA (WHO) → OPA (CONDITIONS) → Model
+### 2) Admin console (`/console`)
+Views implemented:
+- Dashboard
+- Agents list
+- Agent detail
+- Registrations
+- Discovery
+- Policies
+- Audit logs
+- Webhooks
+- Blueprints
+- Integrations
+- Settings
+- System health
 
-Human manages agents:
-  Keycloak OIDC → JWT → /agents API → CRUD lifecycle
-```
+> Current UI is intentionally API-ready but mostly mock-backed to enable immediate demoability while backend contracts are finalized.
 
-## Components
+## Screenshots
+- Placeholder: run the frontend locally and capture pages for docs/screenshots as needed.
 
-| Component | Purpose |
-|---|---|
-| `agent_identity.py` | Agent CRUD lifecycle (create, suspend, rotate, revoke) |
-| `agent_discovery.py` | `/.well-known/agent-configuration` endpoint |
-| `openfga_authz.py` | Relationship-based auth (WHO can access WHAT) |
-| `opa_middleware.py` | Conditional policy engine (budget, DPDP, local-first) |
-| `agent_bootstrap.py` | Pre-provision workflow agents on first deploy |
+## Architecture summary
 
-## Agent Attributes (Entra Agent ID spec)
+`Client/UI -> FastAPI control plane -> SurrealDB + OpenFGA + OPA + optional Keycloak/gateway/webhook consumers`
 
-| Attribute | Description |
-|---|---|
-| `agent_id` | Unique stable identifier |
-| `agent_type` | workflow / ephemeral / mcp_tool |
-| `sponsor_id` | Human who created the agent |
-| `owner_ids` | Technical administrators |
-| `manager_id` | Organizational hierarchy |
-| `blueprint_id` | Template used to create agent |
-| `allowed_models` | LLM models this agent can access |
-| `budget_limit` | Maximum spend per period |
-| `tpm_limit` | Tokens per minute rate limit |
-| `expires_at` | TTL for ephemeral agents |
-| `tenant_id` | Tenant isolation |
+## Tech stack
 
-## Quick Start
+### Backend
+- Python 3.12, FastAPI, Uvicorn
+- SurrealDB
+- OpenFGA
+- OPA
+
+### Frontend
+- Next.js 14 (App Router)
+- TypeScript
+- Tailwind CSS
+- Mock data service layer (`frontend/lib/site-data.ts`)
+
+## Local quickstart (backend)
 
 ```bash
 cp .env.example .env
-# Fill in service URLs and secrets
-docker compose up -d
+docker compose up -d --build
+curl -s http://localhost:8500/health/live
 ```
 
-## Tests
+## Frontend quickstart
 
 ```bash
-pip install -r tests/requirements.txt
-pytest tests/ -v
+cd frontend
+npm install
+npm run dev
 ```
 
-94 tests, 0 failures. Covers agent lifecycle, OpenFGA relationships, OPA policies, discovery endpoint.
+Open `http://localhost:3000` for the website and `http://localhost:3000/console` for the admin UI.
 
-## License
+## How frontend connects to backend
 
-Part of the Autonomyx platform by OpenAutonomyx (OPC) Private Limited.
+- Current state: pages are rendered with typed mock data for consistent demos.
+- Intended integration: replace `frontend/lib/site-data.ts` with API clients per domain module (agents, policy, audit, webhooks).
+- Integration boundary is documented in `docs/ui/ui-architecture.md`.
+
+## Test and quality checks
+
+```bash
+pip install -r requirements.txt
+pip install -r tests/requirements.txt
+pytest -q
+```
+
+Frontend checks:
+
+```bash
+cd frontend
+npm run lint
+npm run typecheck
+```
+
+## Production-ready vs roadmap
+
+### Production-ready now
+- Startup config validation and fail-fast checks.
+- Liveness/readiness split.
+- Baseline observability (request id + structured logs).
+- Webhook signing support.
+- CI workflow and production deployment docs.
+
+### Still roadmap
+- Full RBAC granularity across all endpoints.
+- Full SCIM RFC coverage.
+- Queue-backed retry/dead-letter for webhooks/audit exports.
+- Full console authentication and live backend wiring.
+
+## UI/UX documentation
+- `docs/ui/ui-architecture.md`
+- `docs/ui/design-system.md`
+- `docs/ui/information-architecture.md`
+- `docs/ui/console-pages.md`
+- `docs/ui/website-messaging.md`
+
+## Additional operations docs
+- `docs/audit/production-readiness-audit.md`
+- `docs/audit/gap-matrix.md`
+- `docs/operations/production-checklist.md`
+- `deploy/README.md`
