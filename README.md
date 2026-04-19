@@ -7,6 +7,14 @@ This repository now includes:
 - a production-oriented operations baseline,
 - and a new Next.js product website + admin console experience.
 
+## What this project is
+
+This service manages machine identities for agents and enforces runtime access constraints using:
+- **Keycloak** for human/service authentication.
+- **SurrealDB** for agent identity state.
+- **OpenFGA** for relationship authorization (who can use what).
+- **OPA** for conditional policy evaluation (budget, expiry, model constraints).
+
 ## Product surfaces
 
 ### 1) Public website (`frontend/app`)
@@ -45,6 +53,8 @@ Views implemented:
 
 `Client/UI -> FastAPI control plane -> SurrealDB + OpenFGA + OPA + optional Keycloak/gateway/webhook consumers`
 
+The API is stateless; persistent state must be externalized to production datastores.
+
 ## Tech stack
 
 ### Backend
@@ -62,7 +72,7 @@ Views implemented:
 ## Local quickstart (backend)
 
 ```bash
-cp .env.example .env
+cp .env.example .env  # create values as needed
 docker compose up -d --build
 curl -s http://localhost:8500/health/live
 ```
@@ -99,19 +109,21 @@ npm run lint
 npm run typecheck
 ```
 
-## Production-ready vs roadmap
+## Production-ready vs experimental
 
 ### Production-ready now
-- Startup config validation and fail-fast checks.
-- Liveness/readiness split.
-- Baseline observability (request id + structured logs).
-- Webhook signing support.
-- CI workflow and production deployment docs.
+- Typed startup config validation with prod fail-fast checks.
+- Liveness/readiness endpoints (`/health/live`, `/health/ready`).
+- Request correlation headers and structured logging baseline.
+- Webhook HMAC signature headers for registered secrets.
+- Durable production compose sample (`deploy/docker-compose.prod.yml`).
+- CI workflow with lint/tests/security checks.
 
-### Still roadmap
-- Full RBAC granularity across all endpoints.
-- Full SCIM RFC coverage.
-- Queue-backed retry/dead-letter for webhooks/audit exports.
+### Still experimental / roadmap
+- End-to-end transactional guarantees across SurrealDB + LiteLLM + OpenFGA.
+- True distributed idempotency storage for all mutating APIs.
+- Full SCIM RFC behavior (bulk, sort, full patch semantics).
+- Production-grade retry queues for webhooks and audit export.
 - Full console authentication and live backend wiring.
 
 ## UI/UX documentation
@@ -121,7 +133,7 @@ npm run typecheck
 - `docs/ui/console-pages.md`
 - `docs/ui/website-messaging.md`
 
-## Additional operations docs
+## Additional docs
 - `docs/audit/production-readiness-audit.md`
 - `docs/audit/gap-matrix.md`
 - `docs/operations/production-checklist.md`
