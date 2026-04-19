@@ -15,6 +15,7 @@ export const consoleNav = [
   ["Registrations", "/console/registrations"],
   ["Discovery", "/console/discovery"],
   ["Policies", "/console/policies"],
+  ["Billing", "/console/billing"],
   ["Audit", "/console/audit"],
   ["Webhooks", "/console/webhooks"],
   ["Blueprints", "/console/blueprints"],
