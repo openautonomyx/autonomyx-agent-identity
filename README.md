@@ -1,6 +1,11 @@
-# Autonomyx Agent Identity Plane
+# AutonomyX Agent Identity Plane
 
-A FastAPI-based **Agent Identity Plane** that provides lifecycle, discovery, policy, authorization, audit, webhooks, and SCIM-style provisioning for AI agents.
+AutonomyX Agent Identity Plane is an open-source platform for managing non-human identities (AI agents) across registration, trust, authorization, policy enforcement, and lifecycle controls.
+
+This repository now includes:
+- a FastAPI backend for identity, authz, policy, audit, webhooks, and SCIM-style modules,
+- a production-oriented operations baseline,
+- and a new Next.js product website + admin console experience.
 
 ## What this project is
 
@@ -10,16 +15,99 @@ This service manages machine identities for agents and enforces runtime access c
 - **OpenFGA** for relationship authorization (who can use what).
 - **OPA** for conditional policy evaluation (budget, expiry, model constraints).
 
-## Core capabilities
+## Product surfaces
 
-- Agent lifecycle APIs (`/agents`) for create/list/get/suspend/reactivate/rotate/revoke.
-- Agent discovery (`/.well-known/agent-configuration`).
-- OpenFGA tuple administration and checks (`/authz/*`).
-- OPA policy evaluation endpoint (`/policy/evaluate`).
-- Audit event endpoints (`/audit/*`).
-- Webhook registration + event delivery (`/webhooks/*`).
-- SCIM-style endpoints (`/scim/v2/*`) for users/groups.
-- Background expiry worker for TTL-based identities.
+### 1) Public website (`frontend/app`)
+Pages implemented:
+- Home
+- Product
+- Architecture
+- Security
+- Developers
+- Integrations
+- Pricing placeholder
+- Open Source / Community
+- Contact / Demo placeholder
+
+### 2) Admin console (`/console`)
+Views implemented:
+- Dashboard
+- Agents list
+- Agent detail
+- Registrations
+- Discovery
+- Policies
+- Audit logs
+- Webhooks
+- Blueprints
+- Integrations
+- Settings
+- System health
+
+> Current UI is intentionally API-ready but mostly mock-backed to enable immediate demoability while backend contracts are finalized.
+
+## Screenshots
+- Placeholder: run the frontend locally and capture pages for docs/screenshots as needed.
+
+## Architecture summary
+
+`Client/UI -> FastAPI control plane -> SurrealDB + OpenFGA + OPA + optional Keycloak/gateway/webhook consumers`
+
+The API is stateless; persistent state must be externalized to production datastores.
+
+## Tech stack
+
+### Backend
+- Python 3.12, FastAPI, Uvicorn
+- SurrealDB
+- OpenFGA
+- OPA
+
+### Frontend
+- Next.js 14 (App Router)
+- TypeScript
+- Tailwind CSS
+- Mock data service layer (`frontend/lib/site-data.ts`)
+
+## Local quickstart (backend)
+
+```bash
+cp .env.example .env  # create values as needed
+docker compose up -d --build
+curl -s http://localhost:8500/health/live
+```
+
+## Frontend quickstart
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open `http://localhost:3000` for the website and `http://localhost:3000/console` for the admin UI.
+
+## How frontend connects to backend
+
+- Current state: pages are rendered with typed mock data for consistent demos.
+- Intended integration: replace `frontend/lib/site-data.ts` with API clients per domain module (agents, policy, audit, webhooks).
+- Integration boundary is documented in `docs/ui/ui-architecture.md`.
+
+## Test and quality checks
+
+```bash
+pip install -r requirements.txt
+pip install -r tests/requirements.txt
+pytest -q
+```
+
+Frontend checks:
+
+```bash
+cd frontend
+npm run lint
+npm run typecheck
+```
 
 ## Production-ready vs experimental
 
@@ -36,60 +124,16 @@ This service manages machine identities for agents and enforces runtime access c
 - True distributed idempotency storage for all mutating APIs.
 - Full SCIM RFC behavior (bulk, sort, full patch semantics).
 - Production-grade retry queues for webhooks and audit export.
+- Full console authentication and live backend wiring.
 
-## Architecture summary
-
-`Client -> API -> SurrealDB (identity) + LiteLLM keys + OpenFGA checks + OPA policies`
-
-The API is stateless; persistent state must be externalized to production datastores.
-
-## Dependency stack
-
-- Python 3.12
-- FastAPI / Uvicorn
-- SurrealDB
-- OpenFGA
-- OPA
-- Optional: Keycloak, VictoriaLogs, Lago, Langfuse
-
-See `docs/architecture/runtime-dependencies.md` for runtime dependency details.
-
-## Local quickstart
-
-```bash
-cp .env.example .env  # create values as needed
-docker compose up -d --build
-curl -s http://localhost:8500/health/live
-```
-
-## Run tests
-
-```bash
-pip install -r requirements.txt
-pip install -r tests/requirements.txt
-pytest -q
-```
-
-## Run with dependencies locally
-
-```bash
-uvicorn main:app --host 0.0.0.0 --port 8500 --reload
-```
-
-## Authorization and policy model
-
-- **AuthN**: API bearer token (master/service), Keycloak userinfo checks for user paths.
-- **AuthZ**: OpenFGA tuple checks for relationships.
-- **Policy**: OPA decisions for conditional constraints.
-
-## Known limitations
-
-- Some endpoints still use master-key guardrail rather than fine-grained RBAC.
-- SCIM coverage is partial.
-- Retry/backoff strategy for downstream outages is basic.
+## UI/UX documentation
+- `docs/ui/ui-architecture.md`
+- `docs/ui/design-system.md`
+- `docs/ui/information-architecture.md`
+- `docs/ui/console-pages.md`
+- `docs/ui/website-messaging.md`
 
 ## Additional docs
-
 - `docs/audit/production-readiness-audit.md`
 - `docs/audit/gap-matrix.md`
 - `docs/operations/production-checklist.md`
