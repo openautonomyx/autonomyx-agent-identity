@@ -137,3 +137,22 @@ async def test_fire_webhook_includes_secret_header():
     respx.post("https://a.com/hook").mock(side_effect=capture)
     await webhooks.fire_webhook("agent.created", {"agent_id": "a1"})
     assert captured_headers.get("x-webhook-secret") == "mysecret"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_fire_webhook_includes_signature_headers_when_secret_present():
+    webhooks._registered_webhooks.clear()
+    webhooks._registered_webhooks.append(
+        webhooks.WebhookConfig(url="https://sig.example.com/hook", events=["*"], secret="sigsecret")
+    )
+    captured_headers = {}
+
+    def capture(req, route):
+        captured_headers.update(dict(req.headers))
+        return httpx.Response(200)
+
+    respx.post("https://sig.example.com/hook").mock(side_effect=capture)
+    await webhooks.fire_webhook("agent.created", {"agent_id": "a1"})
+    assert captured_headers.get("x-webhook-signature", "").startswith("sha256=")
+    assert captured_headers.get("x-webhook-timestamp") is not None

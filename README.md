@@ -1,69 +1,96 @@
-# Autonomyx Agent Identity System
+# Autonomyx Agent Identity Plane
 
-**Entra Agent ID spec — open-source implementation**
+A FastAPI-based **Agent Identity Plane** that provides lifecycle, discovery, policy, authorization, audit, webhooks, and SCIM-style provisioning for AI agents.
 
-Three principal types, one platform:
-- **Humans** → Keycloak (OIDC browser login)
-- **Agents** → SurrealDB (first-class entity, own lifecycle)
-- **Services** → Keycloak service accounts (M2M)
+## What this project is
 
-## Architecture
+This service manages machine identities for agents and enforces runtime access constraints using:
+- **Keycloak** for human/service authentication.
+- **SurrealDB** for agent identity state.
+- **OpenFGA** for relationship authorization (who can use what).
+- **OPA** for conditional policy evaluation (budget, expiry, model constraints).
 
-```
-Human creates agent:
-  POST /agents/create → SurrealDB + LiteLLM key + OpenFGA tuples
+## Core capabilities
 
-Agent authenticates:
-  Authorization: Bearer sk-agent:name:tenant
-  → LiteLLM validates → OpenFGA (WHO) → OPA (CONDITIONS) → Model
+- Agent lifecycle APIs (`/agents`) for create/list/get/suspend/reactivate/rotate/revoke.
+- Agent discovery (`/.well-known/agent-configuration`).
+- OpenFGA tuple administration and checks (`/authz/*`).
+- OPA policy evaluation endpoint (`/policy/evaluate`).
+- Audit event endpoints (`/audit/*`).
+- Webhook registration + event delivery (`/webhooks/*`).
+- SCIM-style endpoints (`/scim/v2/*`) for users/groups.
+- Background expiry worker for TTL-based identities.
 
-Human manages agents:
-  Keycloak OIDC → JWT → /agents API → CRUD lifecycle
-```
+## Production-ready vs experimental
 
-## Components
+### Production-ready now
+- Typed startup config validation with prod fail-fast checks.
+- Liveness/readiness endpoints (`/health/live`, `/health/ready`).
+- Request correlation headers and structured logging baseline.
+- Webhook HMAC signature headers for registered secrets.
+- Durable production compose sample (`deploy/docker-compose.prod.yml`).
+- CI workflow with lint/tests/security checks.
 
-| Component | Purpose |
-|---|---|
-| `agent_identity.py` | Agent CRUD lifecycle (create, suspend, rotate, revoke) |
-| `agent_discovery.py` | `/.well-known/agent-configuration` endpoint |
-| `openfga_authz.py` | Relationship-based auth (WHO can access WHAT) |
-| `opa_middleware.py` | Conditional policy engine (budget, DPDP, local-first) |
-| `agent_bootstrap.py` | Pre-provision workflow agents on first deploy |
+### Still experimental / roadmap
+- End-to-end transactional guarantees across SurrealDB + LiteLLM + OpenFGA.
+- True distributed idempotency storage for all mutating APIs.
+- Full SCIM RFC behavior (bulk, sort, full patch semantics).
+- Production-grade retry queues for webhooks and audit export.
 
-## Agent Attributes (Entra Agent ID spec)
+## Architecture summary
 
-| Attribute | Description |
-|---|---|
-| `agent_id` | Unique stable identifier |
-| `agent_type` | workflow / ephemeral / mcp_tool |
-| `sponsor_id` | Human who created the agent |
-| `owner_ids` | Technical administrators |
-| `manager_id` | Organizational hierarchy |
-| `blueprint_id` | Template used to create agent |
-| `allowed_models` | LLM models this agent can access |
-| `budget_limit` | Maximum spend per period |
-| `tpm_limit` | Tokens per minute rate limit |
-| `expires_at` | TTL for ephemeral agents |
-| `tenant_id` | Tenant isolation |
+`Client -> API -> SurrealDB (identity) + LiteLLM keys + OpenFGA checks + OPA policies`
 
-## Quick Start
+The API is stateless; persistent state must be externalized to production datastores.
+
+## Dependency stack
+
+- Python 3.12
+- FastAPI / Uvicorn
+- SurrealDB
+- OpenFGA
+- OPA
+- Optional: Keycloak, VictoriaLogs, Lago, Langfuse
+
+See `docs/architecture/runtime-dependencies.md` for runtime dependency details.
+
+## Local quickstart
 
 ```bash
-cp .env.example .env
-# Fill in service URLs and secrets
-docker compose up -d
+cp .env.example .env  # create values as needed
+docker compose up -d --build
+curl -s http://localhost:8500/health/live
 ```
 
-## Tests
+## Run tests
 
 ```bash
+pip install -r requirements.txt
 pip install -r tests/requirements.txt
-pytest tests/ -v
+pytest -q
 ```
 
-94 tests, 0 failures. Covers agent lifecycle, OpenFGA relationships, OPA policies, discovery endpoint.
+## Run with dependencies locally
 
-## License
+```bash
+uvicorn main:app --host 0.0.0.0 --port 8500 --reload
+```
 
-Part of the Autonomyx platform by OpenAutonomyx (OPC) Private Limited.
+## Authorization and policy model
+
+- **AuthN**: API bearer token (master/service), Keycloak userinfo checks for user paths.
+- **AuthZ**: OpenFGA tuple checks for relationships.
+- **Policy**: OPA decisions for conditional constraints.
+
+## Known limitations
+
+- Some endpoints still use master-key guardrail rather than fine-grained RBAC.
+- SCIM coverage is partial.
+- Retry/backoff strategy for downstream outages is basic.
+
+## Additional docs
+
+- `docs/audit/production-readiness-audit.md`
+- `docs/audit/gap-matrix.md`
+- `docs/operations/production-checklist.md`
+- `deploy/README.md`
